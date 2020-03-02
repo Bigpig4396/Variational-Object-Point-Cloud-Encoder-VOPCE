@@ -15,12 +15,12 @@ How to use the library refer to "VOPCEmanu.pdf"
 
 **Citation**
 
- Cite the environment as:
+ Cite the system as:
  ```
 @article{jiang2020vopce,
   title={Variational Object Point Cloud Encoder (VOPCE)},
   author={Shuo Jiang},
   journal={arXiv preprint},
-  year={2018}
+  year={2020}
 }
 ```
