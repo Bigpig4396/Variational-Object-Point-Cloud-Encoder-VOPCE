@@ -1,4 +1,5 @@
 # Variational-Object-Point-Cloud-Encoder-VOPCE
+In this project, I trained a VAE to encode a object as point cloud into a latent vector of fixed length.
 
 **Dependencies**
  ```
