@@ -1,5 +1,9 @@
 # Variational-Object-Point-Cloud-Encoder-VOPCE
 
+**Dependencies**
+ ```
+Pytorch 1.4, OpenGL-python
+```
 
 **Citation**
 
