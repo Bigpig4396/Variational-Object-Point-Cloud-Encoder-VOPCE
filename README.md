@@ -6,7 +6,9 @@ In this project, I trained a VAE to encode a object as point cloud into a latent
 Pytorch 1.4, OpenGL-python
 ```
 **Usage**
+
 Theory part refer to "VOPCE.pdf"
+
 How to use the library refer to "VOPCEmanu.pdf"
 
 **Citation**
