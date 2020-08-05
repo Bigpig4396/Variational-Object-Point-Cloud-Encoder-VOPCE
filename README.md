@@ -3,7 +3,7 @@ In this project, I trained a VAE to encode a object as point cloud into a latent
 
 **Dependencies**
  ```
-Pytorch 1.4, OpenGL-python
+Pytorch
 ```
 **Usage**
 
