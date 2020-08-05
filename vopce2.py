@@ -276,12 +276,12 @@ class VOPCE(nn.Module):
         return loss.item()
 
     def save_model(self):
-        torch.save(self.mdn, 'rpy_mdn_cylinder.pkl')
-        torch.save(self.deepset, 'rpy_deepset_cylinder.pkl')
+        torch.save(self.mdn, 'rpy_mdn.pkl')
+        torch.save(self.deepset, 'rpy_deepset.pkl')
 
     def load_model(self):
-        self.mdn = torch.load('rpy_mdn_cylinder.pkl')
-        self.deepset = torch.load('rpy_deepset_cylinder.pkl')
+        self.mdn = torch.load('rpy_mdn.pkl')
+        self.deepset = torch.load('rpy_deepset.pkl')
 
     def sample_new(self, pi, mu, sigma, rot):
         # pi torch.Size([2816, 50])
@@ -318,7 +318,7 @@ if __name__ == '__main__':
     n_sample = 1024
     batch_size = 64
     my_loader = DataLoader('D:/Softwares/PyCharmProjects/vMF/shapenet/1.txt')
-    my_loader.from_numpy('D:/Softwares/PyCharmProjects/vMF/fix_cylinder.npy')
+    my_loader.from_numpy('D:/Softwares/PyCharmProjects/vMF/fix_box.npy')
     vopce = VOPCE(z_dim=256, x_dim=3, num_gauss=50)
     my_loader.normalize()
     # vopce.load_model()
@@ -333,7 +333,7 @@ if __name__ == '__main__':
     vopce.save_model()
 
     curve = np.array(loss_list)
-    np.save('rpy_vopce_curve_cylinder.npy', curve)
+    np.save('rpy_vopce_curve_box.npy', curve)
     # plt.plot(loss_list)
 
     fig = plt.figure()
