@@ -7,8 +7,4 @@ Pytorch
 ```
 **Usage**
 
-Theory part refer to "VOPCE.pdf"
-
-How to use the library refer to "VOPCEmanu.pdf"
-
 ![image](https://github.com/Bigpig4396/Variational-Object-Point-Cloud-Encoder-VOPCE/blob/master/Figure_2.png)
