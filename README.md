@@ -11,16 +11,4 @@ Theory part refer to "VOPCE.pdf"
 
 How to use the library refer to "VOPCEmanu.pdf"
 
-![image](https://github.com/Bigpig4396/Variational-Object-Point-Cloud-Encoder-VOPCE/blob/master/pic1.png)
-
-**Citation**
-
- Cite the system as:
- ```
-@article{jiang2020vopce,
-  title={Variational Object Point Cloud Encoder (VOPCE)},
-  author={Shuo Jiang},
-  journal={arXiv preprint},
-  year={2020}
-}
-```
+![image](https://github.com/Bigpig4396/Variational-Object-Point-Cloud-Encoder-VOPCE/blob/master/Figure_2.png)
