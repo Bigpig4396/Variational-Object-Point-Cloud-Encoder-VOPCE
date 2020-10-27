@@ -121,10 +121,6 @@ class MDN(nn.Module):
         self.mu_2 = nn.Linear(256, 256)
         self.mu = nn.Linear(256, 3 * num_gaussians)
 
-        self.sigma_1 = nn.Linear(in_features, 256)
-        self.sigma_2 = nn.Linear(256, 256)
-        self.sigma = nn.Linear(256, 3*num_gaussians)
-
         self.pi = nn.Sequential(
             nn.Linear(in_features, 256),
             nn.ReLU(),
@@ -136,80 +132,89 @@ class MDN(nn.Module):
             nn.Softmax(dim=1)
         )
 
-        self.fc11 = nn.Linear(in_features, 256)
-        self.fc12 = nn.Linear(256, 256)
-        self.fc13 = nn.Linear(256, 3 * num_gaussians)  # RPY angle for each cluster
+        self.lam_1 = nn.Linear(in_features, 256)
+        self.lam_2 = nn.Linear(256, 256)
+        self.lam_3 = nn.Linear(256, 3 * num_gaussians)
+
+        self.U_1 = nn.Linear(in_features, 256)
+        self.U_2 = nn.Linear(256, 256)
+        self.U_3 = nn.Linear(256, 9 * num_gaussians)
 
     def forward(self, x):
         pi = self.pi(x)
-
-        sigma = F.relu(self.sigma_1(x))
-        sigma = F.relu(self.sigma_2(sigma))
-        sigma = torch.exp(self.sigma(sigma))  # [1, K*3]
-        sigma = sigma.view(-1, self.num_gaussians, 3)  # [K, 3]
-
         mu = F.relu(self.mu_1(x))
         mu = F.relu(self.mu_2(mu))
         mu = self.mu(mu)
-        mu = mu.view(-1, self.num_gaussians, 3)  # [K, 3]
+        mu = mu.view(-1, self.num_gaussians, 3)  # [1, K, 3]
 
-        disp = F.relu(self.fc11(x))
-        disp = F.relu(self.fc12(disp))
-        disp = self.fc13(disp)
-        disp = disp.view(-1, self.num_gaussians, 3)
+        lam = F.relu(self.lam_1(x))
+        lam = F.relu(self.lam_2(lam))
+        lam = torch.exp(self.lam_3(lam))  # [1, K*3]
+        lam = lam.view(-1, self.num_gaussians, 3)
 
-        rot = math.pi * torch.tanh(disp)  # [-pi, pi]
-        return pi, mu, sigma, rot
+        U = F.relu(self.U_1(x))
+        U = F.relu(self.U_2(U))
+        U = torch.exp(self.U_3(U))  # [1, K*3]
+        U = U.view(-1, self.num_gaussians, 3, 3)
+        return pi, mu, lam, U
 
-    def get_deter(self, x):
-        a = x[0, 0]
-        b = x[0, 1]
-        c = x[0, 2]
-        d = x[1, 0]
-        e = x[1, 1]
-        f = x[1, 2]
-        g = x[2, 0]
-        h = x[2, 1]
-        i = x[2, 2]
-        return a*e*i-a*f*h-b*d*i+b*f*g+c*d*h-c*e*g
+    def gaussian_probability(self, mu, lam, U, target):
+        N = target.size()[0]  # N = 2800
+        # print('N', N)
+        ONEOVERSQRT2PI = 1.0 / math.sqrt(2 * math.pi)
+        deter = torch.prod(lam, 2)  # deter = [1, 130]
+        ret = torch.zeros(N, self.num_gaussians)
+        # print('ret', ret.size())
+        for j in range(self.num_gaussians):
+            U_p = U[0, j, :, :]
+            R, _ = torch.qr(U_p)
+            eigen_mat = torch.diag_embed(lam[0, j, :] * lam[0, j, :])
+            rot_eigen_mat = torch.mm(R, torch.mm(eigen_mat, torch.transpose(R, 0, 1)))  # [3, 3]
+            b = torch.inverse(rot_eigen_mat)  # [3, 3]
+            a = target - mu[0, j, :]
+            c = a.t()
+            # print('a', a.size())
+            # print('b', b.size())
+            # print('c', c.size())
+            sigma_mat_rot = torch.diag(torch.mm(a, torch.mm(b, c)))  # [2800, 1]
+            # print('sigma_mat_rot', sigma_mat_rot.size())
+            prefix = ONEOVERSQRT2PI * ONEOVERSQRT2PI * ONEOVERSQRT2PI / deter[0, j]
+            # print('prefix', prefix)
+            temp = prefix * torch.exp(-0.5 * sigma_mat_rot)
+            # print('temp', temp.size())
+            ret[:, j] = temp
+        return ret
 
-    def get_rot_mat(self, data):
-        gamma = data[0, 0]
-        beta = data[0, 1]
-        alpha = data[0, 2]
-        rot_mat = torch.zeros(3, 3)
-        rot_mat[0, 0] = torch.cos(alpha) * torch.cos(beta)
-        rot_mat[0, 1] = torch.cos(alpha) * torch.sin(beta) * torch.sin(gamma) - torch.sin(alpha) * torch.cos(gamma)
-        rot_mat[0, 2] = torch.cos(alpha) * torch.sin(beta) * torch.cos(gamma) + torch.sin(alpha) * torch.sin(gamma)
-        rot_mat[1, 0] = torch.sin(alpha) * torch.cos(beta)
-        rot_mat[1, 1] = torch.sin(alpha) * torch.sin(beta) * torch.sin(gamma) + torch.cos(alpha) * torch.cos(gamma)
-        rot_mat[1, 2] = torch.sin(alpha) * torch.sin(beta) * torch.cos(gamma) - torch.cos(alpha) * torch.sin(gamma)
-        rot_mat[2, 0] = -torch.sin(beta)
-        rot_mat[2, 1] = torch.cos(beta) * torch.sin(gamma)
-        rot_mat[2, 2] = torch.cos(beta) * torch.cos(gamma)
-        return rot_mat
-
-    def gaussian_probability2(self, mu, sigma, rot, target):
-        # pi torch.Size([1, 50])
+    def gaussian_probability2(self, mu, lam, U, target):
         # mu torch.Size([1, 50, 3])
-        # sigma torch.Size([1, 50, 3])
-        # rot torch.Size([1, 50, 3])
+        # lam torch.Size([1, 50, 3])
+        # U torch.Size([1, 50, 3, 3])
 
         N = target.size()[0]
         ONEOVERSQRT2PI = 1.0 / math.sqrt(2 * math.pi)
-        deter = torch.prod(sigma, 2)
+        deter = torch.prod(lam, 2)
+
+        # print(deter.size())
         ret = torch.zeros(N, self.num_gaussians)
         for i in range(N):
             data = target[i, :]
             for j in range(self.num_gaussians):
                 a = (data - mu[0, j, :]).view(1, 3)
-                eigen_mat = torch.diag_embed(sigma[0, j, :]*sigma[0, j, :])
-                R = self.get_rot_mat(rot[0, j, :].view(1, 3))
+                c = a.t()
+                eigen_mat = torch.diag_embed(lam[0, j, :] * lam[0, j, :])
+                U_p = U[0, j, :, :]
+                # print('U_p', U_p)
+                R, _ = torch.qr(U_p)
+                # R = self.gramschmidt(U_p)
+                # w, v = torch.eig(R, eigenvectors=True)
+                # print('R*R', torch.mm(torch.transpose(R, 0, 1), R))
+                # print('Rw', w)
                 rot_eigen_mat = torch.mm(R, torch.mm(eigen_mat, torch.transpose(R, 0, 1)))
                 b = torch.inverse(rot_eigen_mat)
-                c = a.t()
+                # print('b', b)
                 sigma_mat_rot = torch.mm(a, torch.mm(b, c))
-                ret[i, j] = ONEOVERSQRT2PI*ONEOVERSQRT2PI*ONEOVERSQRT2PI / deter[0, j] * torch.exp(-0.5 * sigma_mat_rot)
+                ret[i, j] = ONEOVERSQRT2PI * ONEOVERSQRT2PI * ONEOVERSQRT2PI / deter[0, j] * torch.exp(
+                    -0.5 * sigma_mat_rot)
         return ret
 
     def mdn_loss1(self, pi, mu, sigma, rot, target):
@@ -218,10 +223,28 @@ class MDN(nn.Module):
         # sigma torch.Size([1, 50, 3])
         # rot torch.Size([1, 50, 3])
 
-        temp2 = self.gaussian_probability2(mu, sigma, rot, target)
+        temp2 = self.gaussian_probability(mu, sigma, rot, target)
         prob = pi * temp2
         nll = -torch.log(torch.sum(prob, dim=1))
         return torch.mean(nll)
+
+    def gramschmidt(self, A):
+        """
+        Applies the Gram-Schmidt method to A
+        and returns Q and R, so Q*R = A.
+        """
+        R = torch.zeros(3, 3)
+        Q = torch.zeros(3, 3)
+        for k in range(0, 3):
+            a = A[:, k].view(3, 1)
+            R[k, k] = torch.sqrt(torch.mm(torch.transpose(a, 0, 1), a))[0, 0]
+            Q[:, k] = A[:, k] / R[k, k]
+            for j in range(k + 1, 3):
+                q1 = Q[:, k].view(3, 1)
+                a1 = A[:, j].view(3, 1)
+                R[k, j] = torch.mm(torch.transpose(q1, 0, 1), a1)
+                A[:, j] = A[:, j] - R[k, j] * Q[:, k]
+        return Q
 
 class VOPCE(nn.Module):
     def __init__(self, z_dim, x_dim, num_gauss):
@@ -276,14 +299,14 @@ class VOPCE(nn.Module):
         return loss.item()
 
     def save_model(self):
-        torch.save(self.mdn, 'rpy_mdn.pkl')
-        torch.save(self.deepset, 'rpy_deepset.pkl')
+        torch.save(self.mdn, '130_gs_mdn_box_all.pkl')
+        torch.save(self.deepset, '130_gs_deepset_box_all.pkl')
 
     def load_model(self):
-        self.mdn = torch.load('rpy_mdn.pkl')
-        self.deepset = torch.load('rpy_deepset.pkl')
+        self.mdn = torch.load('130_gs_mdn_box_all.pkl')
+        self.deepset = torch.load('130_gs_deepset_box_all.pkl')
 
-    def sample_new(self, pi, mu, sigma, rot):
+    def sample_new(self, pi, mu, lam, U):
         # pi torch.Size([2816, 50])
         # sigma torch.Size([2816, 50, 3])
         # mu torch.Size([2816, 50, 3])
@@ -294,8 +317,9 @@ class VOPCE(nn.Module):
         label = []
         for i in range(mu.size()[0]):   # N
             k = int(pis[i].item())
-            eigen_mat = torch.diag_embed(sigma[i, k, :] * sigma[i, k, :])
-            R = self.mdn.get_rot_mat(rot[i, k, :].view(1, 3))
+            eigen_mat = torch.diag_embed(lam[0, k, :] * lam[0, k, :])
+            U_p = U[0, k, :, :]
+            R, _ = torch.qr(U_p)
             rot_eigen_mat = torch.mm(R, torch.mm(eigen_mat, torch.transpose(R, 0, 1)))
             m = torch.distributions.multivariate_normal.MultivariateNormal(loc=mu[i, k, :].view(3, ),
                                                                            covariance_matrix=rot_eigen_mat)
@@ -310,31 +334,31 @@ class VOPCE(nn.Module):
     def sample(self, x, N):
         z, mu, std = self.encode(x)
         z = z.repeat(N, 1)
-        pi, mu, sigma, rot = self.mdn.forward(z)
-        x_pred, _ = self.sample_new(pi, mu, sigma, rot)
+        pi, mu, lam, U = self.mdn.forward(z)
+        x_pred, _ = self.sample_new(pi, mu, lam, U)
         return x_pred
 
 if __name__ == '__main__':
-    n_sample = 1024
     batch_size = 64
-    my_loader = DataLoader('D:/Softwares/PyCharmProjects/vMF/shapenet/1.txt')
-    my_loader.from_numpy('D:/Softwares/PyCharmProjects/vMF/fix_box.npy')
-    vopce = VOPCE(z_dim=256, x_dim=3, num_gauss=50)
+    my_loader = DataLoader('shapenet/1.txt')
+    my_loader.from_numpy('fix_box.npy')
+    vopce = VOPCE(z_dim=256, x_dim=3, num_gauss=130)
     my_loader.normalize()
     # vopce.load_model()
 
     # train
     loss_list = []
     for i in range(1000):
-        loss = vopce.train(torch.from_numpy(my_loader.sample_batch(batch_size)).float())
-        print('iter', i, 'loss', loss)
-        loss_list.append(loss)
-
-    vopce.save_model()
+        # loss = vopce.train(torch.from_numpy(my_loader.sample_batch(batch_size)).float())
+        loss = vopce.train(torch.from_numpy(my_loader.get_all_data()).float())
+        if i % 1 == 0:
+            print('iter', i, 'loss', loss)
+            loss_list.append(loss)
+            # vopce.save_model()
 
     curve = np.array(loss_list)
-    np.save('rpy_vopce_curve_box.npy', curve)
-    # plt.plot(loss_list)
+    # np.save('130_gs_box_all.npy', curve)
+    # plt.plot(loss_list)'''
 
     fig = plt.figure()
     ax1 = fig.add_subplot(121, projection='3d')
